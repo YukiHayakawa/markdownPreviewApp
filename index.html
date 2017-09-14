@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="https://cdn.rawgit.com/google/code-prettify/master/loader/run_prettify.js?skin=desert"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/0.3.2/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/15.3.1/react.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/15.3.1/react-dom.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-redux/5.0.6/react-redux.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/redux/3.7.2/redux.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/redux-thunk/2.2.0/redux-thunk.min.js"></script>
+  <script type="text/babel">
+
+    /* ----------------------------------------------------------------
+      * Config
+    ---------------------------------------------------------------- */
+    const config = {
+      title: 'ドキュメント',
+      url: './markdown.md',
+    }
+
+    /* ----------------------------------------------------------------
+      * Action
+    ---------------------------------------------------------------- */
+    // Action名の定義
+    const type = {
+      LOADING: 'LOADING',
+      LOADEDIT: 'LOADEDIT',
+      LOADEND: 'LOADEND',
+      ERROR: 'ERROR',
+      INCREMENT: 'INCREMENT',
+      DECREMENT: 'DECREMENT',
+      CHANGE: 'CHANGE',
+      OPEN: 'OPEN',
+      CLOSE: 'CLOSE',
+      FULLSCREEN: 'FULLSCREEN',
+      FULLSCREENOFF: 'FULLSCREENOFF',
+    };
+
+    // Action Creator
+
+    function fullScreen() {
+      return { type: type.FULLSCREEN };
+    }
+
+    function fullScreenOff() {
+      return { type: type.FULLSCREENOFF };
+    }
+
+
+    function open() {
+      return { type: type.OPEN };
+    }
+
+    function close() {
+      return { type: type.CLOSE };
+    }
+
+    function increment() {
+      return { type: type.INCREMENT };
+    }
+
+    function decrement() {
+      return { type: type.DECREMENT };
+    }
+
+    function change(count) {
+      return { type: type.CHANGE, count: count };
+    }
+
+    function loadPrettyPrint() {
+      return { type: type.LOADEND, data: {} };
+    }
+
+    function loadData() {
+      // redux-thunk
+      return (dispatch) => {
+        dispatch({ type: type.LOADING });
+        const getTextData = (callback) => {
+          try {
+            fetch(config.url, {
+              mode: 'cors'
+            }).then((response) => {
+              return response.text();
+            }).then((text) => {
+              const pages = text.split("\n--\n");
+              pages.map((page, count) => {
+                pages[count] = marked(page);
+              })
+              callback(null, pages);
+            })
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        getTextData((err, data) => {
+          if (err) {
+            dispatch({ type: type.ERROR, error: err });
+          } else {
+            dispatch({ type: type.LOADEDIT, data: data });
+          }
+        });
+      };
+    }
+
+    /* ----------------------------------------------------------------
+      * Reducer
+    ---------------------------------------------------------------- */
+    const loadState = window.localStorage && localStorage.slideData !== 'undefined' && localStorage.slideData ? JSON.parse(localStorage.slideData) : {};
+    const initialstate = Object.assign({ count: 0, text: [], nav: true, fullScreen: false, },loadState, config);
+
+    function fullScreenReducer (state = initialstate.fullScreen, action) {
+      switch(action.type) {
+        case type.FULLSCREEN:
+          return true;
+        case type.FULLSCREENOFF:
+          return false;
+        default:
+          return state;
+      }
+    }
+
+    function navReducer (state = initialstate.nav, action) {
+      switch(action.type) {
+        case type.OPEN:
+          return true;
+        case type.CLOSE:
+          return false;
+        default:
+          return state;
+      }
+    }
+
+    function counterReducer (state = initialstate.count, action) {
+      switch(action.type) {
+        case type.CHANGE:
+          return action.count;
+        case type.INCREMENT:
+          return state + 1;
+        case type.DECREMENT:
+          return state - 1;
+        default:
+          return state;
+      }
+    }
+
+    const fetchInitalstate = { 
+      status: type.LOADING, 
+      text: initialstate.text, 
+      title: initialstate.title 
+    }
+    function fetchReducer ( state = fetchInitalstate, action ) {
+      switch(action.type) {
+        case type.LOADEND:
+        case type.LOADEDIT:
+          return { 
+            status: action.type, 
+            text: Object.assign(state.text,action.data), 
+            title: initialstate.title
+          };
+        case type.ERROR:
+          return { 
+            status: type.ERROR, 
+            error: action.error, 
+            title: initialstate.title 
+          };
+        default:
+          return state;
+      }
+    }
+
+    const reducer = Redux.combineReducers({
+      count: counterReducer,
+      data: fetchReducer,
+      nav: navReducer,
+      fullScreen: fullScreenReducer,
+    });
+
+    const store = Redux.createStore(reducer, Redux.applyMiddleware(ReduxThunk.default));
+
+    /* ----------------------------------------------------------------
+      * View
+    ---------------------------------------------------------------- */
+    class App extends React.Component {
+      constructor (props) {
+        super(props);
+        setTimeout(() => {
+          props.onFetch();
+        }, 1000);
+        this.onPageChanging = this.onPageChanging.bind(this);
+      }
+      onPageChanging (e) {
+        if (e.keyCode === 38 || e.keyCode === 37) {
+          if(this.props.count > 0) {
+            this.props.onDecrement();
+          } 
+        } else if (e.keyCode === 39 || e.keyCode === 40) {
+          if(this.props.count < this.props.data.text.length-1) {
+            this.props.onIncrement();
+          } 
+        }
+      }
+      render() {
+        const loadingClassName = this.props.data.status === 'LOADEND' ? '' : 'loading';
+        return (
+          <div className={loadingClassName} onKeyDown={this.onPageChanging} tabIndex="0">
+            <div className="wrap">
+              <Header state={this.props} />
+              <Nav state={this.props} />
+              <Preview ref="preview" state={this.props} />
+            </div>
+            <Loading />
+          </div>
+        );
+      }
+    }
+
+    App.propTypes = {
+      count: React.PropTypes.number.isRequired,
+      onIncrement: React.PropTypes.func.isRequired,
+      onDecrement: React.PropTypes.func.isRequired,
+      onFetch: React.PropTypes.func.isRequired,
+      data: React.PropTypes.object.isRequired,
+    };
+
+    /*
+    * Header Component
+    */
+    class Header extends React.Component {
+      constructor (props) {
+        super(props);
+        this.onNavToggle = this.onNavToggle.bind(this);
+        this.onfullScreenToggle = this.onfullScreenToggle.bind(this);
+      }
+      componentDidMount () {
+        const handleFSevent = () => {
+          if( (document.webkitFullscreenElement && document.webkitFullscreenElement !== null)
+          || (document.mozFullScreenElement && document.mozFullScreenElement !== null)
+          || (document.msFullscreenElement && document.msFullscreenElement !== null)
+          || (document.fullScreenElement && document.fullScreenElement !== null) ) {
+            this.props.state.onFullScreen();
+          }else{
+            this.props.state.onFullScreenOff();
+          }
+        }
+        document.addEventListener('webkitfullscreenchange', handleFSevent, false);
+        document.addEventListener('mozfullscreenchange', handleFSevent, false);
+        document.addEventListener('MSFullscreenChange', handleFSevent, false);
+        document.addEventListener('fullscreenchange', handleFSevent, false);
+      }
+      onNavToggle (e) {
+        if(this.props.state.nav) {
+          this.props.state.onNavClose();
+        } else {
+          this.props.state.onNavOpen();
+        }
+      }
+      onfullScreenToggle (e) {
+        if(this.props.state.fullScreen) {
+          if (document.webkitCancelFullScreen) {
+            document.webkitCancelFullScreen();
+          } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+          } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+          } else {
+            document.exitFullscreen();
+          }
+        } else {
+          if (document.body.webkitRequestFullScreen) {
+            document.body.webkitRequestFullScreen();
+          } else if (document.body.mozRequestFullScreen) {
+            document.body.mozRequestFullScreen();
+          } else if (document.body.msRequestFullscreen) {
+            document.body.msRequestFullscreen();
+          } else {
+            document.body.requestFullScreen();
+          }
+        }
+      }
+      render () {
+        const navClassName = this.props.state.nav ? 'navIcon active' : 'navIcon';
+        const fullScreenClassName = this.props.state.fullScreen ? 'fullScreen active' : 'fullScreen';
+        const fullScreenPath = this.props.state.fullScreen ? 'fullScreenOff' : 'fullScreen';
+        return (
+          <div className="header">
+            <h1 className="title">
+              <span className="titleInner">{this.props.state.data.title}</span>
+            </h1>
+            <div className={navClassName} onClick={this.onNavToggle}>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div className={fullScreenClassName} onClick={this.onfullScreenToggle}>
+              <img src={`./img/icon/${fullScreenPath}.png`} alt="fullScreen" />
+            </div>
+            <p className="pageCount">{this.props.state.count + 1}/{this.props.state.data.text.length}</p>
+          </div>
+        );
+      };
+    };
+
+
+    /*
+    * Preview Component
+    */
+    class Preview extends React.Component {
+      componentDidUpdate () {
+        if(this.props.state.data.status === 'LOADEDIT') {
+          this.props.state.onPrettyPrint();
+          for(let pre of this.refs.inner.querySelectorAll("pre")) {
+            pre.setAttribute("class", "prettyprint linenums");
+          }
+          PR.prettyPrint();
+        }
+      }
+      render () {
+        const previewClassName = this.props.state.nav ? 'preview' : 'preview isNav';
+        const transformStyle = this.props.state.count > 0 ? 'translateX(-' + (100/this.props.state.data.text.length*this.props.state.count) + '%)' : '';
+        return (
+          <div className={previewClassName}>
+            <div className="inner" ref="inner" style={{width:this.props.state.data.text.length + '00%',transform: transformStyle}}>
+              {this.props.state.data.text.map((page,count) => {
+                const activeClass = count === this.props.state.count ? 'active page' : 'page' ;
+                return (
+                  <div key={count} className={activeClass} style={{width:`${100/this.props.state.data.text.length}%`}}>
+                    <div className="pageInner" dangerouslySetInnerHTML={{__html: page}}></div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      };
+    };
+
+    /*
+    * Nav Component
+    */
+    class Nav extends React.Component {
+      constructor(props) {
+        super(props);
+      }
+      send (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.props.state.onClick(Number(e.target.getAttribute('href').replace('#pageCount','')));
+      }
+      render () {
+        return (
+          <div className="nav">
+            <div className="navInner">
+              <ul>
+                {this.props.state.data.text.map((page,count) => {
+                  const activeClass = count === this.props.state.count ? 'active thumb' : 'thumb' ;
+                  return (
+                    <li key={count}>
+                      <a href={`#pageCount${count}`} className={activeClass} onClick={this.send.bind(this)} dangerouslySetInnerHTML={{__html: page}}></a>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        )
+      };
+    }
+
+    /*
+    * Loading Component
+    */
+    const Loading = () => (
+      <div className="spinner">
+        <div className="bounce1"></div>
+        <div className="bounce2"></div>
+        <div className="bounce3"></div>
+      </div>
+    );
+
+    /*
+    * Container Components
+    */
+    const AppContainer = ReactRedux.connect(
+      state => ({
+        data: state.data,
+        error: state.error,
+        count: state.count,
+        nav: state.nav,
+        fullScreen: state.fullScreen,
+      }),
+      dispatch => ({
+        onFetch() { dispatch(loadData()); },
+        onFetch() { dispatch(loadData()); },
+        onIncrement() { dispatch(increment()); },
+        onDecrement() { dispatch(decrement()); },
+        onNavOpen() { dispatch(open()); },
+        onNavClose() { dispatch(close()); },
+        onFullScreen() { dispatch(fullScreen()); },
+        onFullScreenOff() { dispatch(fullScreenOff()); },
+        onClick(count){ dispatch(change(count)); },
+        onPrettyPrint(){ dispatch(loadPrettyPrint()); },
+      })
+    )(App);
+
+    // Rendering
+    const Provider = ReactRedux.Provider;
+    ReactDOM.render(
+      <Provider store={store}>
+        <AppContainer />
+      </Provider>,
+      document.getElementById('app')
+    );
+
+    window.addEventListener('beforeunload', (e) => {
+      localStorage.slideData = JSON.stringify(store.getState());
+    });
+
+</script>
+</body>
+</html>
