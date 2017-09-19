@@ -38,4 +38,3 @@ var hoge = 'hoge';
 |th|th|th|
 |:--|--:|:--:|
 |left|right|center|
-
